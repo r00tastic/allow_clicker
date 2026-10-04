@@ -1,0 +1,879 @@
+import { LineEdit, ScrollView, Slider } from "std-widgets.slint";
+
+// ==== TARGET CHIP ====
+component TargetChip inherits Rectangle {
+    in property <string> label;
+    in property <int> index;
+    in property <bool> violet;
+    callback remove();
+
+    background: root.violet ? rgba(124,156,255,0.08) : rgba(77,227,206,0.08);
+    border-radius: 14px;
+    border-width: 1px;
+    border-color: root.violet ? rgba(124,156,255,0.28) : rgba(77,227,206,0.28);
+    height: 28px;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 6px;
+        spacing: 6px;
+        alignment: center;
+
+        Text {
+            text: root.label;
+            color: #eaf0ff;
+            font-size: 13px;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            width: 20px;
+            height: 20px;
+            border-radius: 10px;
+            background: rm.has-hover ? rgba(255,92,124,0.18) : transparent;
+            animate background { duration: 160ms; }
+
+            Text {
+                text: "×";
+                color: rm.has-hover ? #ff5c7c : #7d8598;
+                font-size: 15px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                animate color { duration: 160ms; }
+            }
+            rm := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.remove(); }
+            }
+        }
+    }
+}
+
+// ==== ICONS (Path-based) ====
+
+component IconReticle inherits Path {
+    in property <brush> tint: #071016;
+    viewbox-width: 24;
+    viewbox-height: 24;
+    stroke: root.tint;
+    stroke-width: 1.6px;
+    fill: transparent;
+    commands: "M 12 3 A 9 9 0 1 1 12 21 A 9 9 0 1 1 12 3 M 12 8 A 4 4 0 1 1 12 16 A 4 4 0 1 1 12 8 M 12 0 L 12 3 M 12 21 L 12 24 M 0 12 L 3 12 M 21 12 L 24 12";
+}
+
+component IconDiamond inherits Path {
+    in property <brush> tint: #4de3ce;
+    viewbox-width: 8;
+    viewbox-height: 8;
+    fill: root.tint;
+    commands: "M 4 0 L 8 4 L 4 8 L 0 4 Z";
+}
+
+component IconCrosshair inherits Path {
+    in property <brush> tint: #4de3ce;
+    viewbox-width: 16;
+    viewbox-height: 16;
+    stroke: root.tint;
+    stroke-width: 1.4px;
+    fill: transparent;
+    commands: "M 8 2 L 8 5 M 8 11 L 8 14 M 2 8 L 5 8 M 11 8 L 14 8 M 8 5 A 3 3 0 1 1 8 11 A 3 3 0 1 1 8 5";
+}
+
+component IconPlus inherits Path {
+    in property <brush> tint: #071016;
+    viewbox-width: 14;
+    viewbox-height: 14;
+    stroke: root.tint;
+    stroke-width: 2.2px;
+    fill: transparent;
+    commands: "M 7 2 L 7 12 M 2 7 L 12 7";
+}
+
+// ==== SIDEBAR NAV ITEM ====
+component NavItem inherits Rectangle {
+    in property <string> glyph;
+    in property <string> tip;
+    in property <bool> active;
+    callback clicked();
+
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: touch.has-hover
+        ? (root.active ? rgba(77,227,206,0.16) : rgba(255,255,255,0.04))
+        : (root.active ? rgba(77,227,206,0.08) : transparent);
+    animate background { duration: 180ms; }
+
+    if root.active: Rectangle {
+        x: -18px;
+        y: (parent.height - 24px) / 2;
+        width: 3px;
+        height: 24px;
+        border-radius: 1.5px;
+        background: #4de3ce;
+    }
+
+    Text {
+        text: root.glyph;
+        color: root.active ? #4de3ce : (touch.has-hover ? #eaf0ff : #7d8598);
+        font-size: 20px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        animate color { duration: 180ms; }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// ==== NEON TOGGLE ====
+component NeonToggle inherits Rectangle {
+    in-out property <bool> checked;
+    in property <string> label;
+    in property <string> sub-label;
+    in property <bool> enabled: true;
+
+    height: 44px;
+
+    HorizontalLayout {
+        spacing: 12px;
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 2px;
+            alignment: center;
+            Text { text: root.label; color: #eaf0ff; font-size: 13px; }
+            Text { text: root.sub-label; color: #7d8598; font-size: 11px; }
+        }
+
+        Rectangle {
+            width: 40px;
+            height: 22px;
+            y: (parent.height - 22px) / 2;
+            border-radius: 11px;
+            background: root.checked
+                ? @linear-gradient(135deg, #4de3ce, #7c9cff)
+                : #232838;
+            animate background { duration: 200ms; }
+            opacity: root.enabled ? 1.0 : 0.4;
+
+            Rectangle {
+                width: 16px;
+                height: 16px;
+                border-radius: 8px;
+                background: root.checked ? #0a0d14 : #7d8598;
+                x: root.checked ? 21px : 3px;
+                y: 3px;
+                animate x { duration: 220ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+                animate background { duration: 180ms; }
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { if (root.enabled) { root.checked = !root.checked; } }
+            }
+        }
+    }
+}
+
+// ==== FAB (Floating Action Button) ====
+component Fab inherits Rectangle {
+    in property <bool> running;
+    callback clicked();
+
+    property <float> pulse-op: 0.6;
+
+    width: 64px;
+    height: 64px;
+    border-radius: 32px;
+
+    // Pulse halkasi
+    Rectangle {
+        x: -6px; y: -6px;
+        width: parent.width + 12px;
+        height: parent.height + 12px;
+        border-radius: (parent.width + 12px) / 2;
+        background: transparent;
+        border-color: root.running ? #55e08a : #ff5c7c;
+        border-width: 2px;
+        opacity: root.pulse-op;
+        animate opacity { duration: 1400ms; easing: ease-out; }
+    }
+
+    Timer {
+        interval: 1400ms;
+        running: true;
+        triggered => { root.pulse-op = root.pulse-op < 0.1 ? 0.55 : 0.0; }
+    }
+
+    // Ana buton
+    fab-btn := Rectangle {
+        width: 64px;
+        height: 64px;
+        border-radius: 32px;
+        background: root.running
+            ? @linear-gradient(135deg, #55e08a, #4de3ce)
+            : @linear-gradient(135deg, #ff5c7c, #ff8a5c);
+        drop-shadow-color: root.running
+            ? rgba(85, 224, 138, 0.5)
+            : rgba(255, 92, 124, 0.5);
+        drop-shadow-blur: fab-ta.has-hover ? 24px : 16px;
+        drop-shadow-offset-y: 4px;
+        animate background { duration: 220ms; }
+        animate drop-shadow-blur { duration: 200ms; }
+
+        // Play/Pause icon (Path — Unicode olmadan)
+        if !root.running: Path {
+            width: 18px;
+            height: 20px;
+            x: (parent.width - self.width) / 2 + 2px;
+            y: (parent.height - self.height) / 2;
+            viewbox-width: 18;
+            viewbox-height: 20;
+            fill: #ffffff;
+            commands: "M 0 0 L 18 10 L 0 20 Z";
+        }
+        if root.running: Rectangle {
+            width: 18px;
+            height: 20px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            HorizontalLayout {
+                spacing: 4px;
+                Rectangle { width: 6px; background: #0a0d14; border-radius: 1px; }
+                Rectangle { width: 6px; background: #0a0d14; border-radius: 1px; }
+            }
+        }
+
+        fab-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.clicked(); }
+        }
+    }
+}
+
+// ==== CARD ====
+component Card inherits Rectangle {
+    in property <string> title;
+    in property <string> badge;
+
+    background: @linear-gradient(180deg, rgba(255,255,255,0.02), transparent 40%);
+    // Uzerinde ana surface renk
+    Rectangle {
+        background: #12161f;
+        border-radius: 14px;
+        border-width: 1px;
+        border-color: #262c3a;
+    }
+    border-radius: 14px;
+
+    VerticalLayout {
+        padding: 14px;
+        spacing: 10px;
+
+        HorizontalLayout {
+            spacing: 8px;
+            HorizontalLayout {
+                spacing: 8px;
+                horizontal-stretch: 1;
+                alignment: start;
+                Rectangle {
+                    width: 8px;
+                    height: 8px;
+                    y: (parent.height - 8px) / 2;
+                    IconDiamond { width: 100%; height: 100%; }
+                }
+                Text {
+                    text: root.title;
+                    color: #7d8598;
+                    font-size: 11px;
+                    font-weight: 500;
+                    letter-spacing: 1.2px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: root.badge;
+                color: #4d5468;
+                font-family: "Consolas";
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+        }
+
+        @children
+    }
+}
+
+// ==== MAIN WINDOW ====
+export component MainWindow inherits Window {
+    title: "Allow Clicker";
+    preferred-width: 900px;
+    preferred-height: 760px;
+    min-width: 720px;
+    min-height: 640px;
+    background: #0a0d14;
+
+    // --- Nav state ---
+    in-out property <int> active-nav: 0;
+
+    // --- Ayarlar ---
+    in-out property <[string]> targets: ["Allow"];
+    in-out property <bool> case-sensitive: false;
+    in-out property <bool> dry-run: false;
+
+    in-out property <int> region-x: 0;
+    in-out property <int> region-y: 0;
+    in-out property <int> region-w: 0;
+    in-out property <int> region-h: 0;
+
+    in-out property <string> rx-text: "0";
+    in-out property <string> ry-text: "0";
+    in-out property <string> rw-text: "0";
+    in-out property <string> rh-text: "0";
+    in-out property <string> new-target: "";
+
+    in-out property <float> interval-ms: 500.0;
+    in-out property <float> cooldown-ms: 1500.0;
+
+    // --- Durum ---
+    in-out property <bool> running: false;
+    in-out property <string> status-text: "Bekleme";
+    in-out property <int> click-count: 0;
+    in-out property <string> uptime-text: "00:00";
+    in-out property <string> log-text: "";
+
+    changed region-x => { rx-text = "\{root.region-x}"; }
+    changed region-y => { ry-text = "\{root.region-y}"; }
+    changed region-w => { rw-text = "\{root.region-w}"; }
+    changed region-h => { rh-text = "\{root.region-h}"; }
+
+    // --- Callbacks ---
+    callback pick-region();
+    callback toggle-running();
+    callback save-config();
+    callback clear-log();
+    callback add-target(string);
+    callback remove-target(int);
+
+    // ==== WRAPPER (tek root child + overlay'ler) ====
+    Rectangle {
+    background: transparent;
+
+    // ==== MAIN CONTENT (sidebar yok) ====
+    VerticalLayout {
+        // Sticky status bar
+        Rectangle {
+            height: 52px;
+            background: rgba(18,22,31, 0.95);
+
+            // Alt border
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: #262c3a;
+            }
+
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                spacing: 12px;
+                alignment: start;
+
+                // Brand — target reticle logo
+                Rectangle {
+                    width: 32px;
+                    height: 32px;
+                    y: (parent.height - 32px) / 2;
+                    border-radius: 10px;
+                    background: @linear-gradient(135deg, #4de3ce, #7c9cff);
+                    drop-shadow-color: rgba(77, 227, 206, 0.35);
+                    drop-shadow-blur: 8px;
+                    drop-shadow-offset-y: 2px;
+                    // Reticle icon
+                    Rectangle {
+                        width: 20px;
+                        height: 20px;
+                        x: 6px; y: 6px;
+                        IconReticle { width: 100%; height: 100%; tint: #071016; }
+                    }
+                    // Merkez nokta
+                    Rectangle {
+                        width: 3px;
+                        height: 3px;
+                        x: 14.5px;
+                        y: 14.5px;
+                        border-radius: 1.5px;
+                        background: #071016;
+                    }
+                }
+
+                Text {
+                    text: "Allow Clicker";
+                    color: #eaf0ff;
+                    font-size: 17px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+
+                    // Status pill
+                    Rectangle {
+                        width: status-content.preferred-width + 24px;
+                        height: 26px;
+                        y: (parent.height - 26px) / 2;
+                        border-radius: 13px;
+                        background: root.running ? rgba(85,224,138, 0.12) : rgba(125,133,152, 0.08);
+                        border-width: 1px;
+                        border-color: root.running ? rgba(85,224,138, 0.3) : rgba(125,133,152, 0.2);
+                        animate background { duration: 200ms; }
+
+                        status-content := HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            spacing: 8px;
+                            alignment: center;
+
+                            // Pulsing dot
+                            Rectangle {
+                                width: 8px;
+                                height: 8px;
+                                y: (parent.height - 8px) / 2;
+                                border-radius: 4px;
+                                background: root.running ? #55e08a : #7d8598;
+                                opacity: root.running ? dot-op : 0.8;
+                                animate opacity { duration: 1000ms; easing: ease-in-out; }
+                            }
+                            Text {
+                                text: root.status-text;
+                                color: root.running ? #55e08a : #a0a5b0;
+                                font-size: 12px;
+                                font-weight: 500;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // Pulsing dot animation timer
+                    Timer {
+                        interval: 1000ms;
+                        running: root.running;
+                        triggered => { dot-op = dot-op > 0.5 ? 0.3 : 1.0; }
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    // Tik chip
+                    Rectangle {
+                        width: click-hbox.preferred-width + 20px;
+                        height: 26px;
+                        y: (parent.height - 26px) / 2;
+                        border-radius: 8px;
+                        background: #12161f;
+                        border-width: 1px;
+                        border-color: #262c3a;
+
+                        click-hbox := HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 6px;
+                            alignment: center;
+                            Text { text: "Tıklama"; color: #7d8598; font-size: 12px; vertical-alignment: center; }
+                            Text {
+                                text: "\{root.click-count}";
+                                color: #eaf0ff;
+                                font-family: "Consolas";
+                                font-size: 12px;
+                                font-weight: 500;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                    // Uptime chip
+                    Rectangle {
+                        width: up-hbox.preferred-width + 20px;
+                        height: 26px;
+                        y: (parent.height - 26px) / 2;
+                        border-radius: 8px;
+                        background: #12161f;
+                        border-width: 1px;
+                        border-color: #262c3a;
+
+                        up-hbox := HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 6px;
+                            alignment: center;
+                            Text { text: "Uptime"; color: #7d8598; font-size: 12px; vertical-alignment: center; }
+                            Text {
+                                text: root.uptime-text;
+                                color: #eaf0ff;
+                                font-family: "Consolas";
+                                font-size: 12px;
+                                font-weight: 500;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+
+            property <float> dot-op: 1.0;
+
+            // Content — sabit (scroll yok)
+            VerticalLayout {
+                padding: 14px;
+                spacing: 10px;
+
+                // Card: Hedef Kelimeler
+                hedef-card := Card {
+                    title: "HEDEF KELİMELER";
+                        badge: "\{root.targets.length} kelime";
+
+                        // Chip listesi
+                        Rectangle {
+                            min-height: 44px;
+                            background: #14171d;
+                            border-radius: 10px;
+                            border-width: 1px;
+                            border-color: #262c3a;
+
+                            Flickable {
+                                interactive: true;
+                                content-width: chip-row.preferred-width;
+                                content-height: self.height;
+
+                                chip-row := HorizontalLayout {
+                                    padding: 8px;
+                                    spacing: 6px;
+                                    alignment: start;
+                                    for word[idx] in root.targets: TargetChip {
+                                        label: word;
+                                        index: idx;
+                                        violet: Math.mod(idx, 2) == 1;
+                                        remove => { root.remove-target(idx); }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Ekleme satiri
+                        HorizontalLayout {
+                            spacing: 8px;
+                            LineEdit {
+                                text <=> root.new-target;
+                                placeholder-text: "Yeni kelime yaz + Enter";
+                                horizontal-stretch: 1;
+                                enabled: !root.running;
+                                accepted(t) => {
+                                    if (t != "") {
+                                        root.add-target(t);
+                                        root.new-target = "";
+                                    }
+                                }
+                            }
+                            // + Ekle butonu (glow hover)
+                            Rectangle {
+                                width: 88px;
+                                height: 32px;
+                                border-radius: 8px;
+                                background: add-touch.has-hover
+                                    ? @linear-gradient(135deg, #5eebd8, #8ba8ff)
+                                    : @linear-gradient(135deg, #4de3ce, #7c9cff);
+                                drop-shadow-color: add-touch.has-hover ? rgba(77,227,206, 0.55) : rgba(77,227,206, 0.25);
+                                drop-shadow-blur: add-touch.has-hover ? 16px : 8px;
+                                drop-shadow-offset-y: 2px;
+                                animate background { duration: 160ms; }
+                                animate drop-shadow-blur { duration: 160ms; }
+                                opacity: !root.running && root.new-target != "" ? 1.0 : 0.35;
+
+                                HorizontalLayout {
+                                    alignment: center;
+                                    spacing: 6px;
+                                    Rectangle {
+                                        width: 12px; height: 12px;
+                                        y: (parent.height - 12px) / 2;
+                                        IconPlus { width: 100%; height: 100%; tint: #071016; }
+                                    }
+                                    Text {
+                                        text: "Ekle";
+                                        color: #071016;
+                                        font-size: 13px;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                add-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    enabled: !root.running && root.new-target != "";
+                                    clicked => {
+                                        root.add-target(root.new-target);
+                                        root.new-target = "";
+                                    }
+                                }
+                            }
+                        }
+
+                        // Toggle'lar
+                        Rectangle {
+                            height: 1px;
+                            background: #232838;
+                        }
+                        NeonToggle {
+                            checked <=> root.case-sensitive;
+                            label: "Büyük/küçük harf duyarlı";
+                            sub-label: "\"Allow\" ile \"allow\" farklı sayılır";
+                            enabled: !root.running;
+                        }
+                        NeonToggle {
+                            checked <=> root.dry-run;
+                            label: "Dry-run modu";
+                            sub-label: "Tespit et ama tıklama — test için";
+                            enabled: !root.running;
+                        }
+                    }
+
+                    // Card: Bolge
+                    bolge-card := Card {
+                        title: "TARAMA BÖLGESİ";
+                        badge: root.region-w > 0 && root.region-h > 0
+                            ? "\{root.region-w} × \{root.region-h} px"
+                            : "seçilmedi";
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            VerticalLayout {
+                                spacing: 4px;
+                                horizontal-stretch: 1;
+                                Text { text: "X"; color: #7d8598; font-size: 10px; }
+                                LineEdit {
+                                    text <=> root.rx-text;
+                                    accepted(t) => { root.region-x = Math.round(t.to-float()); }
+                                    enabled: !root.running;
+                                }
+                            }
+                            VerticalLayout {
+                                spacing: 4px;
+                                horizontal-stretch: 1;
+                                Text { text: "Y"; color: #7d8598; font-size: 10px; }
+                                LineEdit {
+                                    text <=> root.ry-text;
+                                    accepted(t) => { root.region-y = Math.round(t.to-float()); }
+                                    enabled: !root.running;
+                                }
+                            }
+                            VerticalLayout {
+                                spacing: 4px;
+                                horizontal-stretch: 1;
+                                Text { text: "GENİŞLİK"; color: #7d8598; font-size: 10px; }
+                                LineEdit {
+                                    text <=> root.rw-text;
+                                    accepted(t) => { root.region-w = Math.round(t.to-float()); }
+                                    enabled: !root.running;
+                                }
+                            }
+                            VerticalLayout {
+                                spacing: 4px;
+                                horizontal-stretch: 1;
+                                Text { text: "YÜKSEKLİK"; color: #7d8598; font-size: 10px; }
+                                LineEdit {
+                                    text <=> root.rh-text;
+                                    accepted(t) => { root.region-h = Math.round(t.to-float()); }
+                                    enabled: !root.running;
+                                }
+                            }
+                        }
+
+                        // Bolge sec butonu — crosshair icon + text
+                        Rectangle {
+                            height: 40px;
+                            border-radius: 10px;
+                            border-width: 1px;
+                            border-color: pick-touch.has-hover ? #4de3ce : #333b4d;
+                            background: pick-touch.has-hover ? rgba(77,227,206, 0.08) : #191d28;
+                            drop-shadow-color: pick-touch.has-hover ? rgba(77,227,206,0.28) : transparent;
+                            drop-shadow-blur: pick-touch.has-hover ? 14px : 0;
+                            animate background { duration: 180ms; }
+                            animate border-color { duration: 180ms; }
+                            animate drop-shadow-blur { duration: 180ms; }
+                            opacity: !root.running ? 1.0 : 0.4;
+
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: 10px;
+                                Rectangle {
+                                    width: 16px;
+                                    height: 16px;
+                                    y: (parent.height - 16px) / 2;
+                                    IconCrosshair { width: 100%; height: 100%; tint: #4de3ce; }
+                                }
+                                Text {
+                                    text: "Ekranda drag ile bölge seç";
+                                    color: #4de3ce;
+                                    font-size: 13px;
+                                    font-weight: 500;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            pick-touch := TouchArea {
+                                mouse-cursor: pointer;
+                                enabled: !root.running;
+                                clicked => { root.pick-region(); }
+                            }
+                        }
+                    }
+
+                    // Card: Zamanlama
+                    zaman-card := Card {
+                        title: "ZAMANLAMA";
+
+                        HorizontalLayout {
+                            spacing: 12px;
+                            Text {
+                                text: "Aralık";
+                                color: #7d8598;
+                                font-size: 12px;
+                                min-width: 90px;
+                                vertical-alignment: center;
+                            }
+                            Slider {
+                                value <=> root.interval-ms;
+                                minimum: 100;
+                                maximum: 2000;
+                                horizontal-stretch: 1;
+                                enabled: !root.running;
+                            }
+                            Text {
+                                text: "\{Math.round(root.interval-ms)}ms";
+                                color: #eaf0ff;
+                                font-family: "Consolas";
+                                font-size: 12px;
+                                min-width: 70px;
+                                horizontal-alignment: right;
+                                vertical-alignment: center;
+                            }
+                        }
+                        HorizontalLayout {
+                            spacing: 12px;
+                            Text {
+                                text: "Cooldown";
+                                color: #7d8598;
+                                font-size: 12px;
+                                min-width: 90px;
+                                vertical-alignment: center;
+                            }
+                            Slider {
+                                value <=> root.cooldown-ms;
+                                minimum: 200;
+                                maximum: 5000;
+                                horizontal-stretch: 1;
+                                enabled: !root.running;
+                            }
+                            Text {
+                                text: "\{Math.round(root.cooldown-ms)}ms";
+                                color: #eaf0ff;
+                                font-family: "Consolas";
+                                font-size: 12px;
+                                min-width: 70px;
+                                horizontal-alignment: right;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        // Sag altta kucuk ayar butonlari
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: end;
+                            Rectangle {
+                                width: 80px;
+                                height: 30px;
+                                border-radius: 8px;
+                                background: save-touch.has-hover ? #232838 : #191d28;
+                                border-width: 1px;
+                                border-color: #333b4d;
+                                animate background { duration: 160ms; }
+                                Text {
+                                    text: "Kaydet";
+                                    color: #eaf0ff;
+                                    font-size: 12px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                save-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.save-config(); }
+                                }
+                            }
+                            Rectangle {
+                                width: 80px;
+                                height: 30px;
+                                border-radius: 8px;
+                                background: clog-touch.has-hover ? #232838 : #191d28;
+                                border-width: 1px;
+                                border-color: #333b4d;
+                                animate background { duration: 160ms; }
+                                Text {
+                                    text: "Log Sil";
+                                    color: #eaf0ff;
+                                    font-size: 12px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                clog-touch := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.clear-log(); }
+                                }
+                            }
+                        }
+                    }
+
+                    // Card: Log — kalan alani doldur
+                    log-card := Card {
+                        title: "CANLI LOG";
+                        badge: "son 100 satır";
+                        vertical-stretch: 1;
+
+                        Rectangle {
+                            vertical-stretch: 1;
+                            background: #06090f;
+                            border-radius: 10px;
+                            border-width: 1px;
+                            border-color: #262c3a;
+
+                            ScrollView {
+                                Text {
+                                    text: root.log-text != "" ? root.log-text : "worker durduruldu — BAŞLAT'a bas veya F8'e bas";
+                                    color: root.log-text != "" ? #cbd0da : #4d5468;
+                                    font-family: "Consolas";
+                                    font-size: 11px;
+                                    wrap: word-wrap;
+                                    x: 12px;
+                                    y: 10px;
+                                    width: parent.width - 24px;
+                                }
+                            }
+                        }
+                    }
+                }
+        }
+    }
+
+    // ==== FAB (overlay) — Window ustunde, sag alt ====
+    Fab {
+        x: root.width - 88px;
+        y: root.height - 88px;
+        running: root.running;
+        clicked => { root.toggle-running(); }
+    }
+
+    // F8 hint
+    Text {
+        x: root.width - 60px;
+        y: root.height - 24px;
+        text: "F8";
+        color: #7d8598;
+        font-family: "Consolas";
+        font-size: 10px;
+    }
+
+    } // wrapper Rectangle kapanış

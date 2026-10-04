@@ -1,0 +1,45 @@
+[package]
+name = "allow_clicker"
+version = "0.2.0"
+edition = "2021"
+build = "build.rs"
+
+[dependencies]
+anyhow = "1"
+slint = { version = "1.9", features = ["backend-winit", "renderer-femtovg", "renderer-software"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+xcap = "0.0.14"
+image = "0.25"
+enigo = "0.2"
+global-hotkey = "0.6"
+directories = "5"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+[dependencies.windows]
+version = "0.60"
+features = [
+    "Foundation",
+    "Foundation_Collections",
+    "Media_Ocr",
+    "Globalization",
+    "Graphics_Imaging",
+    "Storage",
+    "Storage_Streams",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Com",
+]
+
+[build-dependencies]
+slint-build = "1.9"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+codegen-units = 1
