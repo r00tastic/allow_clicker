@@ -7,10 +7,16 @@ use std::{
     time::Duration,
 };
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use enigo::{Button, Coordinate, Direction, Enigo, Mouse, Settings};
-use image::DynamicImage;
-use xcap::Monitor;
+use windows::Win32::{
+    Graphics::Gdi::{
+        BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
+        GetDC, GetDIBits, ReleaseDC, SelectObject, BITMAPINFOHEADER, DIB_RGB_COLORS,
+        SRCCOPY,
+    },
+    UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN},
+};
 
 use crate::ocr::{Hit, Ocr};
 
@@ -52,7 +58,6 @@ impl Clicker {
         if self.is_running() {
             return Ok(());
         }
-        // Onceki worker'in join'ini garanti et (start restart senaryosu)
         if let Some(h) = self.handle.take() {
             let _ = h.join();
         }
@@ -67,7 +72,6 @@ impl Clicker {
         Ok(())
     }
 
-    /// Sadece sinyal ver — UI thread'i bloklamaz. Worker sonraki tick'te durur.
     pub fn stop(&mut self) {
         self.running.store(false, Ordering::Release);
     }
@@ -90,23 +94,59 @@ fn send_log(tx: &mpsc::Sender<ClickerMsg>, msg: impl Into<String>) {
     let _ = tx.send(ClickerMsg::Log(format!("{} {}", ts(), msg.into())));
 }
 
-/// Region merkezini iceren monitoru bul; hicbiri kapsamıyorsa primary.
-fn find_monitor_for_region(cfg: &ClickerConfig, monitors: &[Monitor]) -> Option<usize> {
-    if cfg.region_w == 0 || cfg.region_h == 0 {
-        return Some(0);
-    }
-    let cx = cfg.region_x + (cfg.region_w as i32) / 2;
-    let cy = cfg.region_y + (cfg.region_h as i32) / 2;
-    for (i, m) in monitors.iter().enumerate() {
-        let mx = m.x();
-        let my = m.y();
-        let mw = m.width() as i32;
-        let mh = m.height() as i32;
-        if cx >= mx && cx < mx + mw && cy >= my && cy < my + mh {
-            return Some(i);
+/// GDI BitBlt ile ekrandan belirli bir bolgeyi yakala.
+/// CPU-only — GPU kullanmaz. Piksel verisi BGRA formatinda doner.
+fn capture_screen(x: i32, y: i32, w: i32, h: i32, buf: &mut Vec<u8>) -> Result<()> {
+    unsafe {
+        let hdc_screen = GetDC(None);
+        if hdc_screen.is_invalid() {
+            return Err(anyhow!("GetDC failed"));
         }
+        let hdc_mem = CreateCompatibleDC(Some(hdc_screen));
+        if hdc_mem.is_invalid() {
+            ReleaseDC(None, hdc_screen);
+            return Err(anyhow!("CreateCompatibleDC failed"));
+        }
+        let hbm = CreateCompatibleBitmap(hdc_screen, w, h);
+        if hbm.is_invalid() {
+            let _ = DeleteDC(hdc_mem);
+            ReleaseDC(None, hdc_screen);
+            return Err(anyhow!("CreateCompatibleBitmap failed"));
+        }
+        let old = SelectObject(hdc_mem, hbm.into());
+        let _ = BitBlt(hdc_mem, 0, 0, w, h, Some(hdc_screen), x, y, SRCCOPY);
+
+        let mut bmi_header: BITMAPINFOHEADER = std::mem::zeroed();
+        bmi_header.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+        bmi_header.biWidth = w;
+        bmi_header.biHeight = -h; // top-down
+        bmi_header.biPlanes = 1;
+        bmi_header.biBitCount = 32;
+
+        let expected = (w as usize) * (h as usize) * 4;
+        buf.resize(expected, 0);
+
+        GetDIBits(
+            hdc_mem,
+            hbm,
+            0,
+            h as u32,
+            Some(buf.as_mut_ptr() as *mut _),
+            &mut bmi_header as *mut _ as *mut _,
+            DIB_RGB_COLORS,
+        );
+
+        // GDI alpha=0 verir, 255'e set et
+        for px in buf.chunks_exact_mut(4) {
+            px[3] = 0xFF;
+        }
+
+        SelectObject(hdc_mem, old);
+        let _ = DeleteObject(hbm.into());
+        let _ = DeleteDC(hdc_mem);
+        ReleaseDC(None, hdc_screen);
+        Ok(())
     }
-    Some(0)
 }
 
 fn worker(
@@ -122,18 +162,6 @@ fn worker(
         }
     };
 
-    let monitors = match Monitor::all() {
-        Ok(m) if !m.is_empty() => m,
-        _ => {
-            send_log(&tx, "[HATA] Monitor bulunamadi");
-            return Ok(());
-        }
-    };
-    let mon_idx = find_monitor_for_region(&cfg, &monitors).unwrap_or(0);
-    let monitor = &monitors[mon_idx];
-    let mon_x = monitor.x();
-    let mon_y = monitor.y();
-
     let mut enigo = match Enigo::new(&Settings::default()) {
         Ok(e) => e,
         Err(e) => {
@@ -142,61 +170,38 @@ fn worker(
         }
     };
 
+    // Yakalama bolgesi: ayarlanmissa region, yoksa birincil monitor
+    let (cap_x, cap_y, cap_w, cap_h) = if cfg.region_w > 0 && cfg.region_h > 0 {
+        (cfg.region_x, cfg.region_y, cfg.region_w as i32, cfg.region_h as i32)
+    } else {
+        unsafe {
+            (0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN))
+        }
+    };
+
     send_log(&tx, format!(
-        "[+] baslatildi — hedefler={:?}, monitor#{} @({},{}), bolge=({},{},{},{}){}",
-        cfg.targets, mon_idx, mon_x, mon_y,
-        cfg.region_x, cfg.region_y, cfg.region_w, cfg.region_h,
+        "[+] baslatildi — hedefler={:?}, bolge=({},{},{},{}){}",
+        cfg.targets, cap_x, cap_y, cap_w, cap_h,
         if cfg.dry_run { " [DRY-RUN]" } else { "" }
     ));
 
-    while running.load(Ordering::Acquire) {
-        let full = match monitor.capture_image() {
-            Ok(im) => im,
-            Err(e) => {
-                send_log(&tx, format!("[!] capture: {}", e));
-                thread::sleep(Duration::from_millis(1000));
-                continue;
-            }
-        };
-        let img_dyn = DynamicImage::ImageRgba8(full);
-        let img_w = img_dyn.width();
-        let img_h = img_dyn.height();
+    let mut bgra_buf: Vec<u8> = Vec::with_capacity((cap_w as usize) * (cap_h as usize) * 4);
 
-        // Bolgeyi monitor-relative koordinata cevir
-        let (local_x, local_y, rw, rh) = if cfg.region_w == 0 || cfg.region_h == 0 {
-            (0i32, 0i32, img_w, img_h)
-        } else {
-            let lx = cfg.region_x - mon_x;
-            let ly = cfg.region_y - mon_y;
-            // Ekran disina taşan kismi kirp
-            let lx_c = lx.max(0);
-            let ly_c = ly.max(0);
-            let dx = (lx_c - lx) as u32; // baslangicin kırpildigi kadar geniisligi de kirp
-            let dy = (ly_c - ly) as u32;
-            let mut w = cfg.region_w.saturating_sub(dx);
-            let mut h = cfg.region_h.saturating_sub(dy);
-            if lx_c as u32 >= img_w || ly_c as u32 >= img_h {
-                (0, 0, 0, 0)
-            } else {
-                w = w.min(img_w - lx_c as u32);
-                h = h.min(img_h - ly_c as u32);
-                (lx_c, ly_c, w, h)
-            }
-        };
-        if rw == 0 || rh == 0 {
-            send_log(&tx, "[!] bolge ekran disi");
+    while running.load(Ordering::Acquire) {
+        if let Err(e) = capture_screen(cap_x, cap_y, cap_w, cap_h, &mut bgra_buf) {
+            send_log(&tx, format!("[!] capture: {}", e));
             thread::sleep(Duration::from_millis(1000));
             continue;
         }
-        let cropped = img_dyn.crop_imm(local_x as u32, local_y as u32, rw, rh);
 
-        // OCR (goruntu koordinatinda tespit -> ekran mutlak koordinatina cevir)
         let hit: Option<Hit> = match ocr.find_any(
-            &cropped,
+            &bgra_buf,
+            cap_w as u32,
+            cap_h as u32,
             &cfg.targets,
             cfg.case_sensitive,
-            mon_x + local_x,
-            mon_y + local_y,
+            cap_x,
+            cap_y,
         ) {
             Ok(h) => h,
             Err(e) => {
