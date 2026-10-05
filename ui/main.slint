@@ -180,13 +180,11 @@ component Fab inherits Rectangle {
     in property <bool> running;
     callback clicked();
 
-    property <float> pulse-op: 0.6;
-
     width: 64px;
     height: 64px;
     border-radius: 32px;
 
-    // Pulse halkasi
+    // Static ring
     Rectangle {
         x: -6px; y: -6px;
         width: parent.width + 12px;
@@ -194,15 +192,8 @@ component Fab inherits Rectangle {
         border-radius: (parent.width + 12px) / 2;
         background: transparent;
         border-color: root.running ? #55e08a : #ff5c7c;
-        border-width: 2px;
-        opacity: root.pulse-op;
-        animate opacity { duration: 1400ms; easing: ease-out; }
-    }
-
-    Timer {
-        interval: 1400ms;
-        running: true;
-        triggered => { root.pulse-op = root.pulse-op < 0.1 ? 0.55 : 0.0; }
+        border-width: root.running ? 2px : 1px;
+        opacity: root.running ? 0.6 : 0.3;
     }
 
     // Ana buton
@@ -214,12 +205,12 @@ component Fab inherits Rectangle {
             ? @linear-gradient(135deg, #55e08a, #4de3ce)
             : @linear-gradient(135deg, #ff5c7c, #ff8a5c);
         drop-shadow-color: root.running
-            ? rgba(85, 224, 138, 0.5)
-            : rgba(255, 92, 124, 0.5);
-        drop-shadow-blur: fab-ta.has-hover ? 24px : 16px;
-        drop-shadow-offset-y: 4px;
+            ? rgba(85, 224, 138, 0.4)
+            : rgba(255, 92, 124, 0.4);
+        drop-shadow-blur: fab-ta.has-hover ? 12px : 0;
+        drop-shadow-offset-y: fab-ta.has-hover ? 2px : 0;
         animate background { duration: 220ms; }
-        animate drop-shadow-blur { duration: 200ms; }
+        animate drop-shadow-blur { duration: 160ms; }
 
         // Play/Pause icon (Path — Unicode olmadan)
         if !root.running: Path {
@@ -388,9 +379,6 @@ export component MainWindow inherits Window {
                     y: (parent.height - 32px) / 2;
                     border-radius: 10px;
                     background: @linear-gradient(135deg, #4de3ce, #7c9cff);
-                    drop-shadow-color: rgba(77, 227, 206, 0.35);
-                    drop-shadow-blur: 8px;
-                    drop-shadow-offset-y: 2px;
                     // Reticle icon
                     Rectangle {
                         width: 20px;
@@ -434,15 +422,13 @@ export component MainWindow inherits Window {
                             spacing: 8px;
                             alignment: center;
 
-                            // Pulsing dot
+                            // Status dot
                             Rectangle {
                                 width: 8px;
                                 height: 8px;
                                 y: (parent.height - 8px) / 2;
                                 border-radius: 4px;
                                 background: root.running ? #55e08a : #7d8598;
-                                opacity: root.running ? dot-op : 0.8;
-                                animate opacity { duration: 1000ms; easing: ease-in-out; }
                             }
                             Text {
                                 text: root.status-text;
@@ -454,12 +440,6 @@ export component MainWindow inherits Window {
                         }
                     }
 
-                    // Pulsing dot animation timer
-                    Timer {
-                        interval: 1000ms;
-                        running: root.running;
-                        triggered => { dot-op = dot-op > 0.5 ? 0.3 : 1.0; }
-                    }
 
                     Rectangle { horizontal-stretch: 1; }
 
@@ -517,8 +497,6 @@ export component MainWindow inherits Window {
                     }
                 }
             }
-
-            property <float> dot-op: 1.0;
 
             // Content — sabit (scroll yok)
             VerticalLayout {
@@ -580,8 +558,8 @@ export component MainWindow inherits Window {
                                 background: add-touch.has-hover
                                     ? @linear-gradient(135deg, #5eebd8, #8ba8ff)
                                     : @linear-gradient(135deg, #4de3ce, #7c9cff);
-                                drop-shadow-color: add-touch.has-hover ? rgba(77,227,206, 0.55) : rgba(77,227,206, 0.25);
-                                drop-shadow-blur: add-touch.has-hover ? 16px : 8px;
+                                drop-shadow-color: add-touch.has-hover ? rgba(77,227,206, 0.4) : transparent;
+                                drop-shadow-blur: add-touch.has-hover ? 8px : 0;
                                 drop-shadow-offset-y: 2px;
                                 animate background { duration: 160ms; }
                                 animate drop-shadow-blur { duration: 160ms; }
@@ -691,11 +669,10 @@ export component MainWindow inherits Window {
                             border-width: 1px;
                             border-color: pick-touch.has-hover ? #4de3ce : #333b4d;
                             background: pick-touch.has-hover ? rgba(77,227,206, 0.08) : #191d28;
-                            drop-shadow-color: pick-touch.has-hover ? rgba(77,227,206,0.28) : transparent;
-                            drop-shadow-blur: pick-touch.has-hover ? 14px : 0;
+                            drop-shadow-color: transparent;
+                            drop-shadow-blur: 0;
                             animate background { duration: 180ms; }
                             animate border-color { duration: 180ms; }
-                            animate drop-shadow-blur { duration: 180ms; }
                             opacity: !root.running ? 1.0 : 0.4;
 
                             HorizontalLayout {

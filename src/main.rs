@@ -213,8 +213,10 @@ fn main() -> Result<()> {
     let toggle_tick = toggle.clone();
     let start_time: Rc<Cell<Option<Instant>>> = Rc::new(Cell::new(None));
     let start_time_tick = start_time.clone();
+    let prev_uptime: Rc<Cell<u64>> = Rc::new(Cell::new(u64::MAX));
+    let prev_uptime_tick = prev_uptime.clone();
     let timer = Timer::default();
-    timer.start(TimerMode::Repeated, Duration::from_millis(80), move || {
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
         while hotkey_rx.try_recv().is_ok() {
             toggle_tick();
         }
@@ -250,23 +252,19 @@ fn main() -> Result<()> {
                 ui.set_status_text(SharedString::from("Durduruldu"));
                 start_time_tick.set(None);
             }
-            // Uptime — running true iken start_time set, degilse "00:00"
             let is_running = ui.get_running();
             if is_running && start_time_tick.get().is_none() {
                 start_time_tick.set(Some(Instant::now()));
             }
             if !is_running && start_time_tick.get().is_some() {
-                // fresh stop
                 start_time_tick.set(None);
             }
-            let up = match start_time_tick.get() {
-                Some(t) => {
-                    let s = t.elapsed().as_secs();
-                    format!("{:02}:{:02}", s / 60, s % 60)
-                }
-                None => "00:00".to_string(),
-            };
-            ui.set_uptime_text(SharedString::from(up));
+            let secs = start_time_tick.get().map(|t| t.elapsed().as_secs()).unwrap_or(0);
+            if secs != prev_uptime_tick.get() {
+                prev_uptime_tick.set(secs);
+                let up = format!("{:02}:{:02}", secs / 60, secs % 60);
+                ui.set_uptime_text(SharedString::from(up));
+            }
         }
     });
 
