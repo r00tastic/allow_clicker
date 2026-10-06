@@ -18,11 +18,19 @@ use windows::Win32::{
     UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN},
 };
 
+use crate::config::StepAction;
 use crate::ocr::{Hit, Ocr};
 
 #[derive(Debug, Clone)]
+pub struct StepConfig {
+    pub word: String,
+    pub delay_secs: f32,
+    pub action: StepAction,
+}
+
+#[derive(Debug, Clone)]
 pub struct ClickerConfig {
-    pub targets: Vec<String>,
+    pub steps: Vec<StepConfig>,
     pub case_sensitive: bool,
     pub dry_run: bool,
     pub region_x: i32,
@@ -30,7 +38,6 @@ pub struct ClickerConfig {
     pub region_w: u32,
     pub region_h: u32,
     pub interval_ms: u64,
-    pub cooldown_ms: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +45,7 @@ pub enum ClickerMsg {
     Log(String),
     Clicked,
     Stopped,
+    StepChanged(usize),
 }
 
 pub struct Clicker {
@@ -94,8 +102,6 @@ fn send_log(tx: &mpsc::Sender<ClickerMsg>, msg: impl Into<String>) {
     let _ = tx.send(ClickerMsg::Log(format!("{} {}", ts(), msg.into())));
 }
 
-/// GDI BitBlt ile ekrandan belirli bir bolgeyi yakala.
-/// CPU-only — GPU kullanmaz. Piksel verisi BGRA formatinda doner.
 fn capture_screen(x: i32, y: i32, w: i32, h: i32, buf: &mut Vec<u8>) -> Result<()> {
     unsafe {
         let hdc_screen = GetDC(None);
@@ -119,7 +125,7 @@ fn capture_screen(x: i32, y: i32, w: i32, h: i32, buf: &mut Vec<u8>) -> Result<(
         let mut bmi_header: BITMAPINFOHEADER = std::mem::zeroed();
         bmi_header.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
         bmi_header.biWidth = w;
-        bmi_header.biHeight = -h; // top-down
+        bmi_header.biHeight = -h;
         bmi_header.biPlanes = 1;
         bmi_header.biBitCount = 32;
 
@@ -136,7 +142,6 @@ fn capture_screen(x: i32, y: i32, w: i32, h: i32, buf: &mut Vec<u8>) -> Result<(
             DIB_RGB_COLORS,
         );
 
-        // GDI alpha=0 verir, 255'e set et
         for px in buf.chunks_exact_mut(4) {
             px[3] = 0xFF;
         }
@@ -170,7 +175,6 @@ fn worker(
         }
     };
 
-    // Yakalama bolgesi: ayarlanmissa region, yoksa birincil monitor
     let (cap_x, cap_y, cap_w, cap_h) = if cfg.region_w > 0 && cfg.region_h > 0 {
         (cfg.region_x, cfg.region_y, cfg.region_w as i32, cfg.region_h as i32)
     } else {
@@ -179,58 +183,81 @@ fn worker(
         }
     };
 
+    let step_count = cfg.steps.len();
+    let step_names: Vec<&str> = cfg.steps.iter().map(|s| s.word.as_str()).collect();
     send_log(&tx, format!(
-        "[+] baslatildi — hedefler={:?}, bolge=({},{},{},{}){}",
-        cfg.targets, cap_x, cap_y, cap_w, cap_h,
+        "[+] baslatildi — {} adim: {:?}, bolge=({},{},{},{}){}",
+        step_count, step_names, cap_x, cap_y, cap_w, cap_h,
         if cfg.dry_run { " [DRY-RUN]" } else { "" }
     ));
 
     let mut bgra_buf: Vec<u8> = Vec::with_capacity((cap_w as usize) * (cap_h as usize) * 4);
+    let mut step_idx: usize = 0;
 
     while running.load(Ordering::Acquire) {
-        if let Err(e) = capture_screen(cap_x, cap_y, cap_w, cap_h, &mut bgra_buf) {
-            send_log(&tx, format!("[!] capture: {}", e));
-            thread::sleep(Duration::from_millis(1000));
-            continue;
-        }
+        let step = &cfg.steps[step_idx];
+        let _ = tx.send(ClickerMsg::StepChanged(step_idx));
+        send_log(&tx, format!("adim {}/{}: \"{}\" araniyor...", step_idx + 1, step_count, step.word));
 
-        let hit: Option<Hit> = match ocr.find_any(
-            &bgra_buf,
-            cap_w as u32,
-            cap_h as u32,
-            &cfg.targets,
-            cfg.case_sensitive,
-            cap_x,
-            cap_y,
-        ) {
-            Ok(h) => h,
-            Err(e) => {
-                send_log(&tx, format!("[!] OCR: {}", e));
-                thread::sleep(Duration::from_millis(cfg.interval_ms));
+        loop {
+            if !running.load(Ordering::Acquire) { break; }
+
+            if let Err(e) = capture_screen(cap_x, cap_y, cap_w, cap_h, &mut bgra_buf) {
+                send_log(&tx, format!("[!] capture: {}", e));
+                thread::sleep(Duration::from_millis(1000));
                 continue;
             }
-        };
 
-        if let Some(h) = hit {
-            send_log(&tx, format!("[+] '{}' bulundu @ ({}, {})", h.text, h.center_x, h.center_y));
-            if !cfg.dry_run {
-                if let Err(e) = enigo.move_mouse(h.center_x, h.center_y, Coordinate::Abs) {
-                    send_log(&tx, format!("[!] mouse move: {}", e));
-                    thread::sleep(Duration::from_millis(cfg.interval_ms));
+            let targets = &[step.word.clone()];
+            let hit: Option<Hit> = match ocr.find_any(
+                &bgra_buf,
+                cap_w as u32,
+                cap_h as u32,
+                targets,
+                cfg.case_sensitive,
+                cap_x,
+                cap_y,
+            ) {
+                Ok(h) => h,
+                Err(e) => {
+                    send_log(&tx, format!("[!] OCR: {}", e));
+                    sleep_interruptible(&running, cfg.interval_ms);
                     continue;
                 }
-                thread::sleep(Duration::from_millis(60));
-                if let Err(e) = enigo.button(Button::Left, Direction::Click) {
-                    send_log(&tx, format!("[!] click: {}", e));
+            };
+
+            if let Some(h) = hit {
+                send_log(&tx, format!("[+] '{}' bulundu @ ({}, {})", h.text, h.center_x, h.center_y));
+                if !cfg.dry_run {
+                    if let Err(e) = enigo.move_mouse(h.center_x, h.center_y, Coordinate::Abs) {
+                        send_log(&tx, format!("[!] mouse move: {}", e));
+                        sleep_interruptible(&running, cfg.interval_ms);
+                        continue;
+                    }
+                    thread::sleep(Duration::from_millis(60));
+                    if let Err(e) = enigo.button(Button::Left, Direction::Click) {
+                        send_log(&tx, format!("[!] click: {}", e));
+                    }
+                    let _ = tx.send(ClickerMsg::Clicked);
                 }
-                let _ = tx.send(ClickerMsg::Clicked);
-                send_log(&tx, "    [OK] tiklandi");
-                sleep_interruptible(&running, cfg.cooldown_ms);
+
+                match step.action {
+                    StepAction::Stop => {
+                        send_log(&tx, "    [OK] tiklandi — DURDURULUYOR");
+                        running.store(false, Ordering::Release);
+                        break;
+                    }
+                    StepAction::Wait => {
+                        send_log(&tx, format!("    [OK] tiklandi — {:.1}s bekleniyor", step.delay_secs));
+                        let delay_ms = (step.delay_secs * 1000.0) as u64;
+                        sleep_interruptible(&running, delay_ms);
+                        step_idx = (step_idx + 1) % step_count;
+                        break;
+                    }
+                }
             } else {
                 sleep_interruptible(&running, cfg.interval_ms);
             }
-        } else {
-            sleep_interruptible(&running, cfg.interval_ms);
         }
     }
 

@@ -1,40 +1,131 @@
 import { LineEdit, ScrollView, Slider } from "std-widgets.slint";
 
-// ==== TARGET CHIP ====
-component TargetChip inherits Rectangle {
-    in property <string> label;
+// ==== STEP ITEM STRUCT ====
+export struct StepItem {
+    word: string,
+    delay-secs: float,
+    stop: bool,  // true = tikla ve dur, false = tikla ve bekle
+}
+
+// ==== STEP ROW ====
+component StepRow inherits Rectangle {
+    in property <string> word;
+    in property <float> delay-secs;
     in property <int> index;
-    in property <bool> violet;
+    in property <int> total;
+    in property <bool> active;
+    in property <bool> can-remove;
+    in property <bool> stop;
     callback remove();
 
-    background: root.violet ? rgba(124,156,255,0.08) : rgba(77,227,206,0.08);
-    border-radius: 14px;
+    height: 40px;
+    border-radius: 10px;
+    background: root.active ? rgba(85,224,138,0.08) : rgba(255,255,255,0.02);
     border-width: 1px;
-    border-color: root.violet ? rgba(124,156,255,0.28) : rgba(77,227,206,0.28);
-    height: 28px;
+    border-color: root.active ? rgba(85,224,138,0.3) : #262c3a;
+    animate background { duration: 200ms; }
+    animate border-color { duration: 200ms; }
 
     HorizontalLayout {
         padding-left: 12px;
-        padding-right: 6px;
-        spacing: 6px;
+        padding-right: 8px;
+        spacing: 10px;
         alignment: center;
 
+        // Sira numarasi
+        Rectangle {
+            width: 24px;
+            height: 24px;
+            border-radius: 12px;
+            background: root.active
+                ? @linear-gradient(135deg, #55e08a, #4de3ce)
+                : #232838;
+            animate background { duration: 200ms; }
+
+            Text {
+                text: "\{root.index + 1}";
+                color: root.active ? #0a0d14 : #7d8598;
+                font-size: 12px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Kelime
         Text {
-            text: root.label;
-            color: #eaf0ff;
+            text: root.word;
+            color: root.active ? #55e08a : #eaf0ff;
             font-size: 13px;
+            font-weight: 500;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            animate color { duration: 200ms; }
+        }
+
+        // Ok isareti (sonraki adima) veya dur isareti
+        if !root.stop && root.index < root.total - 1: Text {
+            text: "→";
+            color: #4d5468;
+            font-size: 14px;
             vertical-alignment: center;
         }
+        if !root.stop && root.index == root.total - 1 && root.total > 1: Text {
+            text: "↻";
+            color: #4d5468;
+            font-size: 14px;
+            vertical-alignment: center;
+        }
+
+        // Bekleme suresi veya DUR etiketi
+        if !root.stop: Rectangle {
+            width: 56px;
+            height: 24px;
+            border-radius: 6px;
+            background: rgba(124,156,255,0.08);
+            border-width: 1px;
+            border-color: rgba(124,156,255,0.2);
+
+            Text {
+                text: "\{root.delay-secs}s";
+                color: #7c9cff;
+                font-family: "Consolas";
+                font-size: 11px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+        if root.stop: Rectangle {
+            width: 56px;
+            height: 24px;
+            border-radius: 6px;
+            background: rgba(255,92,124,0.12);
+            border-width: 1px;
+            border-color: rgba(255,92,124,0.3);
+
+            Text {
+                text: "DUR";
+                color: #ff5c7c;
+                font-family: "Consolas";
+                font-size: 11px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        // Sil butonu
         Rectangle {
-            width: 20px;
-            height: 20px;
-            border-radius: 10px;
+            width: 24px;
+            height: 24px;
+            border-radius: 12px;
             background: rm.has-hover ? rgba(255,92,124,0.18) : transparent;
             animate background { duration: 160ms; }
+            opacity: root.can-remove ? 1.0 : 0.3;
 
             Text {
                 text: "×";
-                color: rm.has-hover ? #ff5c7c : #7d8598;
+                color: rm.has-hover && root.can-remove ? #ff5c7c : #7d8598;
                 font-size: 15px;
                 horizontal-alignment: center;
                 vertical-alignment: center;
@@ -42,6 +133,7 @@ component TargetChip inherits Rectangle {
             }
             rm := TouchArea {
                 mouse-cursor: pointer;
+                enabled: root.can-remove;
                 clicked => { root.remove(); }
             }
         }
@@ -86,44 +178,6 @@ component IconPlus inherits Path {
     stroke-width: 2.2px;
     fill: transparent;
     commands: "M 7 2 L 7 12 M 2 7 L 12 7";
-}
-
-// ==== SIDEBAR NAV ITEM ====
-component NavItem inherits Rectangle {
-    in property <string> glyph;
-    in property <string> tip;
-    in property <bool> active;
-    callback clicked();
-
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    background: touch.has-hover
-        ? (root.active ? rgba(77,227,206,0.16) : rgba(255,255,255,0.04))
-        : (root.active ? rgba(77,227,206,0.08) : transparent);
-    animate background { duration: 180ms; }
-
-    if root.active: Rectangle {
-        x: -18px;
-        y: (parent.height - 24px) / 2;
-        width: 3px;
-        height: 24px;
-        border-radius: 1.5px;
-        background: #4de3ce;
-    }
-
-    Text {
-        text: root.glyph;
-        color: root.active ? #4de3ce : (touch.has-hover ? #eaf0ff : #7d8598);
-        font-size: 20px;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        animate color { duration: 180ms; }
-    }
-    touch := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
-    }
 }
 
 // ==== NEON TOGGLE ====
@@ -184,7 +238,6 @@ component Fab inherits Rectangle {
     height: 64px;
     border-radius: 32px;
 
-    // Static ring
     Rectangle {
         x: -6px; y: -6px;
         width: parent.width + 12px;
@@ -196,7 +249,6 @@ component Fab inherits Rectangle {
         opacity: root.running ? 0.6 : 0.3;
     }
 
-    // Ana buton
     fab-btn := Rectangle {
         width: 64px;
         height: 64px;
@@ -212,7 +264,6 @@ component Fab inherits Rectangle {
         animate background { duration: 220ms; }
         animate drop-shadow-blur { duration: 160ms; }
 
-        // Play/Pause icon (Path — Unicode olmadan)
         if !root.running: Path {
             width: 18px;
             height: 20px;
@@ -248,7 +299,6 @@ component Card inherits Rectangle {
     in property <string> badge;
 
     background: @linear-gradient(180deg, rgba(255,255,255,0.02), transparent 40%);
-    // Uzerinde ana surface renk
     Rectangle {
         background: #12161f;
         border-radius: 14px;
@@ -304,11 +354,8 @@ export component MainWindow inherits Window {
     min-height: 640px;
     background: #0a0d14;
 
-    // --- Nav state ---
-    in-out property <int> active-nav: 0;
-
-    // --- Ayarlar ---
-    in-out property <[string]> targets: ["Allow"];
+    // --- Adimlar ---
+    in-out property <[StepItem]> steps: [{ word: "Allow", delay-secs: 1.5 }];
     in-out property <bool> case-sensitive: false;
     in-out property <bool> dry-run: false;
 
@@ -321,10 +368,11 @@ export component MainWindow inherits Window {
     in-out property <string> ry-text: "0";
     in-out property <string> rw-text: "0";
     in-out property <string> rh-text: "0";
-    in-out property <string> new-target: "";
+    in-out property <string> new-word: "";
+    in-out property <string> new-delay: "1.5";
+    in-out property <bool> new-stop: false;
 
     in-out property <float> interval-ms: 500.0;
-    in-out property <float> cooldown-ms: 1500.0;
 
     // --- Durum ---
     in-out property <bool> running: false;
@@ -332,6 +380,7 @@ export component MainWindow inherits Window {
     in-out property <int> click-count: 0;
     in-out property <string> uptime-text: "00:00";
     in-out property <string> log-text: "";
+    in-out property <int> current-step: -1;
 
     changed region-x => { rx-text = "\{root.region-x}"; }
     changed region-y => { ry-text = "\{root.region-y}"; }
@@ -343,21 +392,19 @@ export component MainWindow inherits Window {
     callback toggle-running();
     callback save-config();
     callback clear-log();
-    callback add-target(string);
-    callback remove-target(int);
+    callback add-step(string, float, bool);
+    callback remove-step(int);
 
-    // ==== WRAPPER (tek root child + overlay'ler) ====
+    // ==== WRAPPER ====
     Rectangle {
     background: transparent;
 
-    // ==== MAIN CONTENT (sidebar yok) ====
     VerticalLayout {
         // Sticky status bar
         Rectangle {
             height: 52px;
             background: rgba(18,22,31, 0.95);
 
-            // Alt border
             Rectangle {
                 y: parent.height - 1px;
                 height: 1px;
@@ -372,21 +419,19 @@ export component MainWindow inherits Window {
                 spacing: 12px;
                 alignment: start;
 
-                // Brand — target reticle logo
+                // Brand logo
                 Rectangle {
                     width: 32px;
                     height: 32px;
                     y: (parent.height - 32px) / 2;
                     border-radius: 10px;
                     background: @linear-gradient(135deg, #4de3ce, #7c9cff);
-                    // Reticle icon
                     Rectangle {
                         width: 20px;
                         height: 20px;
                         x: 6px; y: 6px;
                         IconReticle { width: 100%; height: 100%; tint: #071016; }
                     }
-                    // Merkez nokta
                     Rectangle {
                         width: 3px;
                         height: 3px;
@@ -405,437 +450,463 @@ export component MainWindow inherits Window {
                     vertical-alignment: center;
                 }
 
-                    // Status pill
+                // Status pill
+                Rectangle {
+                    width: status-content.preferred-width + 24px;
+                    height: 26px;
+                    y: (parent.height - 26px) / 2;
+                    border-radius: 13px;
+                    background: root.running ? rgba(85,224,138, 0.12) : rgba(125,133,152, 0.08);
+                    border-width: 1px;
+                    border-color: root.running ? rgba(85,224,138, 0.3) : rgba(125,133,152, 0.2);
+                    animate background { duration: 200ms; }
+
+                    status-content := HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 8px;
+                        alignment: center;
+
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            y: (parent.height - 8px) / 2;
+                            border-radius: 4px;
+                            background: root.running ? #55e08a : #7d8598;
+                        }
+                        Text {
+                            text: root.status-text;
+                            color: root.running ? #55e08a : #a0a5b0;
+                            font-size: 12px;
+                            font-weight: 500;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                // Adim chip
+                if root.running && root.current-step >= 0: Rectangle {
+                    width: step-hbox.preferred-width + 20px;
+                    height: 26px;
+                    y: (parent.height - 26px) / 2;
+                    border-radius: 8px;
+                    background: rgba(85,224,138,0.1);
+                    border-width: 1px;
+                    border-color: rgba(85,224,138,0.3);
+
+                    step-hbox := HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 6px;
+                        alignment: center;
+                        Text { text: "Adım"; color: #55e08a; font-size: 12px; vertical-alignment: center; }
+                        Text {
+                            text: "\{root.current-step + 1}/\{root.steps.length}";
+                            color: #eaf0ff;
+                            font-family: "Consolas";
+                            font-size: 12px;
+                            font-weight: 500;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Tik chip
+                Rectangle {
+                    width: click-hbox.preferred-width + 20px;
+                    height: 26px;
+                    y: (parent.height - 26px) / 2;
+                    border-radius: 8px;
+                    background: #12161f;
+                    border-width: 1px;
+                    border-color: #262c3a;
+
+                    click-hbox := HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 6px;
+                        alignment: center;
+                        Text { text: "Tıklama"; color: #7d8598; font-size: 12px; vertical-alignment: center; }
+                        Text {
+                            text: "\{root.click-count}";
+                            color: #eaf0ff;
+                            font-family: "Consolas";
+                            font-size: 12px;
+                            font-weight: 500;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                // Uptime chip
+                Rectangle {
+                    width: up-hbox.preferred-width + 20px;
+                    height: 26px;
+                    y: (parent.height - 26px) / 2;
+                    border-radius: 8px;
+                    background: #12161f;
+                    border-width: 1px;
+                    border-color: #262c3a;
+
+                    up-hbox := HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 6px;
+                        alignment: center;
+                        Text { text: "Uptime"; color: #7d8598; font-size: 12px; vertical-alignment: center; }
+                        Text {
+                            text: root.uptime-text;
+                            color: #eaf0ff;
+                            font-family: "Consolas";
+                            font-size: 12px;
+                            font-weight: 500;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Content
+        VerticalLayout {
+            padding: 14px;
+            spacing: 10px;
+
+            // Card: Adimlar
+            Card {
+                title: "ADIMLAR";
+                badge: "\{root.steps.length} adım";
+
+                // Adim listesi
+                VerticalLayout {
+                    spacing: 6px;
+                    for item[idx] in root.steps: StepRow {
+                        word: item.word;
+                        delay-secs: item.delay-secs;
+                        index: idx;
+                        total: root.steps.length;
+                        active: root.running && root.current-step == idx;
+                        can-remove: !root.running && root.steps.length > 1;
+                        stop: item.stop;
+                        remove => { root.remove-step(idx); }
+                    }
+                }
+
+                // Ekleme satiri
+                Rectangle {
+                    height: 1px;
+                    background: #232838;
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    LineEdit {
+                        text <=> root.new-word;
+                        placeholder-text: "Kelime (ör: Join)";
+                        horizontal-stretch: 1;
+                        enabled: !root.running;
+                        accepted(t) => {
+                            if (t != "") {
+                                root.add-step(t, root.new-delay.to-float(), root.new-stop);
+                                root.new-word = "";
+                            }
+                        }
+                    }
+                    // Bekleme suresi input
+                    if !root.new-stop: VerticalLayout {
+                        spacing: 2px;
+                        Text { text: "Bekleme (s)"; color: #7d8598; font-size: 10px; }
+                        LineEdit {
+                            text <=> root.new-delay;
+                            placeholder-text: "1.5";
+                            width: 70px;
+                            enabled: !root.running;
+                        }
+                    }
+                    // Bekle/Dur secici
                     Rectangle {
-                        width: status-content.preferred-width + 24px;
-                        height: 26px;
-                        y: (parent.height - 26px) / 2;
-                        border-radius: 13px;
-                        background: root.running ? rgba(85,224,138, 0.12) : rgba(125,133,152, 0.08);
+                        width: 52px;
+                        height: 28px;
+                        y: 8px;
+                        border-radius: 7px;
                         border-width: 1px;
-                        border-color: root.running ? rgba(85,224,138, 0.3) : rgba(125,133,152, 0.2);
-                        animate background { duration: 200ms; }
+                        border-color: root.new-stop ? rgba(255,92,124,0.4) : rgba(85,224,138,0.4);
+                        background: root.new-stop ? rgba(255,92,124,0.1) : rgba(85,224,138,0.1);
+                        animate background { duration: 160ms; }
+                        animate border-color { duration: 160ms; }
 
-                        status-content := HorizontalLayout {
-                            padding-left: 12px;
-                            padding-right: 12px;
-                            spacing: 8px;
+                        Text {
+                            text: root.new-stop ? "DUR" : "BEKLE";
+                            color: root.new-stop ? #ff5c7c : #55e08a;
+                            font-size: 10px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            animate color { duration: 160ms; }
+                        }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            enabled: !root.running;
+                            clicked => { root.new-stop = !root.new-stop; }
+                        }
+                    }
+                    // + Ekle butonu
+                    Rectangle {
+                        width: 88px;
+                        height: 32px;
+                        y: 12px;
+                        border-radius: 8px;
+                        background: add-touch.has-hover
+                            ? @linear-gradient(135deg, #5eebd8, #8ba8ff)
+                            : @linear-gradient(135deg, #4de3ce, #7c9cff);
+                        drop-shadow-color: add-touch.has-hover ? rgba(77,227,206, 0.4) : transparent;
+                        drop-shadow-blur: add-touch.has-hover ? 8px : 0;
+                        drop-shadow-offset-y: 2px;
+                        animate background { duration: 160ms; }
+                        animate drop-shadow-blur { duration: 160ms; }
+                        opacity: !root.running && root.new-word != "" ? 1.0 : 0.35;
+
+                        HorizontalLayout {
                             alignment: center;
-
-                            // Status dot
+                            spacing: 6px;
                             Rectangle {
-                                width: 8px;
-                                height: 8px;
-                                y: (parent.height - 8px) / 2;
-                                border-radius: 4px;
-                                background: root.running ? #55e08a : #7d8598;
+                                width: 12px; height: 12px;
+                                y: (parent.height - 12px) / 2;
+                                IconPlus { width: 100%; height: 100%; tint: #071016; }
                             }
                             Text {
-                                text: root.status-text;
-                                color: root.running ? #55e08a : #a0a5b0;
-                                font-size: 12px;
-                                font-weight: 500;
+                                text: "Ekle";
+                                color: #071016;
+                                font-size: 13px;
+                                font-weight: 700;
                                 vertical-alignment: center;
                             }
                         }
-                    }
-
-
-                    Rectangle { horizontal-stretch: 1; }
-
-                    // Tik chip
-                    Rectangle {
-                        width: click-hbox.preferred-width + 20px;
-                        height: 26px;
-                        y: (parent.height - 26px) / 2;
-                        border-radius: 8px;
-                        background: #12161f;
-                        border-width: 1px;
-                        border-color: #262c3a;
-
-                        click-hbox := HorizontalLayout {
-                            padding-left: 10px;
-                            padding-right: 10px;
-                            spacing: 6px;
-                            alignment: center;
-                            Text { text: "Tıklama"; color: #7d8598; font-size: 12px; vertical-alignment: center; }
-                            Text {
-                                text: "\{root.click-count}";
-                                color: #eaf0ff;
-                                font-family: "Consolas";
-                                font-size: 12px;
-                                font-weight: 500;
-                                vertical-alignment: center;
+                        add-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            enabled: !root.running && root.new-word != "";
+                            clicked => {
+                                root.add-step(root.new-word, root.new-delay.to-float(), root.new-stop);
+                                root.new-word = "";
                             }
                         }
                     }
-                    // Uptime chip
-                    Rectangle {
-                        width: up-hbox.preferred-width + 20px;
-                        height: 26px;
-                        y: (parent.height - 26px) / 2;
-                        border-radius: 8px;
-                        background: #12161f;
-                        border-width: 1px;
-                        border-color: #262c3a;
+                }
 
-                        up-hbox := HorizontalLayout {
-                            padding-left: 10px;
-                            padding-right: 10px;
-                            spacing: 6px;
-                            alignment: center;
-                            Text { text: "Uptime"; color: #7d8598; font-size: 12px; vertical-alignment: center; }
-                            Text {
-                                text: root.uptime-text;
-                                color: #eaf0ff;
-                                font-family: "Consolas";
-                                font-size: 12px;
-                                font-weight: 500;
-                                vertical-alignment: center;
-                            }
+                // Toggle'lar
+                Rectangle {
+                    height: 1px;
+                    background: #232838;
+                }
+                NeonToggle {
+                    checked <=> root.case-sensitive;
+                    label: "Büyük/küçük harf duyarlı";
+                    sub-label: "\"Allow\" ile \"allow\" farklı sayılır";
+                    enabled: !root.running;
+                }
+                NeonToggle {
+                    checked <=> root.dry-run;
+                    label: "Dry-run modu";
+                    sub-label: "Tespit et ama tıklama — test için";
+                    enabled: !root.running;
+                }
+            }
+
+            // Card: Bolge
+            Card {
+                title: "TARAMA BÖLGESİ";
+                badge: root.region-w > 0 && root.region-h > 0
+                    ? "\{root.region-w} × \{root.region-h} px"
+                    : "seçilmedi";
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    VerticalLayout {
+                        spacing: 4px;
+                        horizontal-stretch: 1;
+                        Text { text: "X"; color: #7d8598; font-size: 10px; }
+                        LineEdit {
+                            text <=> root.rx-text;
+                            accepted(t) => { root.region-x = Math.round(t.to-float()); }
+                            enabled: !root.running;
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 4px;
+                        horizontal-stretch: 1;
+                        Text { text: "Y"; color: #7d8598; font-size: 10px; }
+                        LineEdit {
+                            text <=> root.ry-text;
+                            accepted(t) => { root.region-y = Math.round(t.to-float()); }
+                            enabled: !root.running;
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 4px;
+                        horizontal-stretch: 1;
+                        Text { text: "GENİŞLİK"; color: #7d8598; font-size: 10px; }
+                        LineEdit {
+                            text <=> root.rw-text;
+                            accepted(t) => { root.region-w = Math.round(t.to-float()); }
+                            enabled: !root.running;
+                        }
+                    }
+                    VerticalLayout {
+                        spacing: 4px;
+                        horizontal-stretch: 1;
+                        Text { text: "YÜKSEKLİK"; color: #7d8598; font-size: 10px; }
+                        LineEdit {
+                            text <=> root.rh-text;
+                            accepted(t) => { root.region-h = Math.round(t.to-float()); }
+                            enabled: !root.running;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: 40px;
+                    border-radius: 10px;
+                    border-width: 1px;
+                    border-color: pick-touch.has-hover ? #4de3ce : #333b4d;
+                    background: pick-touch.has-hover ? rgba(77,227,206, 0.08) : #191d28;
+                    animate background { duration: 180ms; }
+                    animate border-color { duration: 180ms; }
+                    opacity: !root.running ? 1.0 : 0.4;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 10px;
+                        Rectangle {
+                            width: 16px;
+                            height: 16px;
+                            y: (parent.height - 16px) / 2;
+                            IconCrosshair { width: 100%; height: 100%; tint: #4de3ce; }
+                        }
+                        Text {
+                            text: "Ekranda drag ile bölge seç";
+                            color: #4de3ce;
+                            font-size: 13px;
+                            font-weight: 500;
+                            vertical-alignment: center;
+                        }
+                    }
+                    pick-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        enabled: !root.running;
+                        clicked => { root.pick-region(); }
+                    }
+                }
+            }
+
+            // Card: Zamanlama
+            Card {
+                title: "ZAMANLAMA";
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    Text {
+                        text: "Tarama aralığı";
+                        color: #7d8598;
+                        font-size: 12px;
+                        min-width: 110px;
+                        vertical-alignment: center;
+                    }
+                    Slider {
+                        value <=> root.interval-ms;
+                        minimum: 100;
+                        maximum: 2000;
+                        horizontal-stretch: 1;
+                        enabled: !root.running;
+                    }
+                    Text {
+                        text: "\{Math.round(root.interval-ms)}ms";
+                        color: #eaf0ff;
+                        font-family: "Consolas";
+                        font-size: 12px;
+                        min-width: 70px;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // Kaydet ve Log Sil
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+                    Rectangle {
+                        width: 80px;
+                        height: 30px;
+                        border-radius: 8px;
+                        background: save-touch.has-hover ? #232838 : #191d28;
+                        border-width: 1px;
+                        border-color: #333b4d;
+                        animate background { duration: 160ms; }
+                        Text {
+                            text: "Kaydet";
+                            color: #eaf0ff;
+                            font-size: 12px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        save-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.save-config(); }
+                        }
+                    }
+                    Rectangle {
+                        width: 80px;
+                        height: 30px;
+                        border-radius: 8px;
+                        background: clog-touch.has-hover ? #232838 : #191d28;
+                        border-width: 1px;
+                        border-color: #333b4d;
+                        animate background { duration: 160ms; }
+                        Text {
+                            text: "Log Sil";
+                            color: #eaf0ff;
+                            font-size: 12px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        clog-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.clear-log(); }
                         }
                     }
                 }
             }
 
-            // Content — sabit (scroll yok)
-            VerticalLayout {
-                padding: 14px;
-                spacing: 10px;
+            // Card: Log
+            Card {
+                title: "CANLI LOG";
+                badge: "son 100 satır";
+                vertical-stretch: 1;
 
-                // Card: Hedef Kelimeler
-                hedef-card := Card {
-                    title: "HEDEF KELİMELER";
-                        badge: "\{root.targets.length} kelime";
+                Rectangle {
+                    vertical-stretch: 1;
+                    background: #06090f;
+                    border-radius: 10px;
+                    border-width: 1px;
+                    border-color: #262c3a;
 
-                        // Chip listesi
-                        Rectangle {
-                            min-height: 44px;
-                            background: #14171d;
-                            border-radius: 10px;
-                            border-width: 1px;
-                            border-color: #262c3a;
-
-                            Flickable {
-                                interactive: true;
-                                content-width: chip-row.preferred-width;
-                                content-height: self.height;
-
-                                chip-row := HorizontalLayout {
-                                    padding: 8px;
-                                    spacing: 6px;
-                                    alignment: start;
-                                    for word[idx] in root.targets: TargetChip {
-                                        label: word;
-                                        index: idx;
-                                        violet: Math.mod(idx, 2) == 1;
-                                        remove => { root.remove-target(idx); }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Ekleme satiri
-                        HorizontalLayout {
-                            spacing: 8px;
-                            LineEdit {
-                                text <=> root.new-target;
-                                placeholder-text: "Yeni kelime yaz + Enter";
-                                horizontal-stretch: 1;
-                                enabled: !root.running;
-                                accepted(t) => {
-                                    if (t != "") {
-                                        root.add-target(t);
-                                        root.new-target = "";
-                                    }
-                                }
-                            }
-                            // + Ekle butonu (glow hover)
-                            Rectangle {
-                                width: 88px;
-                                height: 32px;
-                                border-radius: 8px;
-                                background: add-touch.has-hover
-                                    ? @linear-gradient(135deg, #5eebd8, #8ba8ff)
-                                    : @linear-gradient(135deg, #4de3ce, #7c9cff);
-                                drop-shadow-color: add-touch.has-hover ? rgba(77,227,206, 0.4) : transparent;
-                                drop-shadow-blur: add-touch.has-hover ? 8px : 0;
-                                drop-shadow-offset-y: 2px;
-                                animate background { duration: 160ms; }
-                                animate drop-shadow-blur { duration: 160ms; }
-                                opacity: !root.running && root.new-target != "" ? 1.0 : 0.35;
-
-                                HorizontalLayout {
-                                    alignment: center;
-                                    spacing: 6px;
-                                    Rectangle {
-                                        width: 12px; height: 12px;
-                                        y: (parent.height - 12px) / 2;
-                                        IconPlus { width: 100%; height: 100%; tint: #071016; }
-                                    }
-                                    Text {
-                                        text: "Ekle";
-                                        color: #071016;
-                                        font-size: 13px;
-                                        font-weight: 700;
-                                        vertical-alignment: center;
-                                    }
-                                }
-                                add-touch := TouchArea {
-                                    mouse-cursor: pointer;
-                                    enabled: !root.running && root.new-target != "";
-                                    clicked => {
-                                        root.add-target(root.new-target);
-                                        root.new-target = "";
-                                    }
-                                }
-                            }
-                        }
-
-                        // Toggle'lar
-                        Rectangle {
-                            height: 1px;
-                            background: #232838;
-                        }
-                        NeonToggle {
-                            checked <=> root.case-sensitive;
-                            label: "Büyük/küçük harf duyarlı";
-                            sub-label: "\"Allow\" ile \"allow\" farklı sayılır";
-                            enabled: !root.running;
-                        }
-                        NeonToggle {
-                            checked <=> root.dry-run;
-                            label: "Dry-run modu";
-                            sub-label: "Tespit et ama tıklama — test için";
-                            enabled: !root.running;
-                        }
-                    }
-
-                    // Card: Bolge
-                    bolge-card := Card {
-                        title: "TARAMA BÖLGESİ";
-                        badge: root.region-w > 0 && root.region-h > 0
-                            ? "\{root.region-w} × \{root.region-h} px"
-                            : "seçilmedi";
-
-                        HorizontalLayout {
-                            spacing: 8px;
-                            VerticalLayout {
-                                spacing: 4px;
-                                horizontal-stretch: 1;
-                                Text { text: "X"; color: #7d8598; font-size: 10px; }
-                                LineEdit {
-                                    text <=> root.rx-text;
-                                    accepted(t) => { root.region-x = Math.round(t.to-float()); }
-                                    enabled: !root.running;
-                                }
-                            }
-                            VerticalLayout {
-                                spacing: 4px;
-                                horizontal-stretch: 1;
-                                Text { text: "Y"; color: #7d8598; font-size: 10px; }
-                                LineEdit {
-                                    text <=> root.ry-text;
-                                    accepted(t) => { root.region-y = Math.round(t.to-float()); }
-                                    enabled: !root.running;
-                                }
-                            }
-                            VerticalLayout {
-                                spacing: 4px;
-                                horizontal-stretch: 1;
-                                Text { text: "GENİŞLİK"; color: #7d8598; font-size: 10px; }
-                                LineEdit {
-                                    text <=> root.rw-text;
-                                    accepted(t) => { root.region-w = Math.round(t.to-float()); }
-                                    enabled: !root.running;
-                                }
-                            }
-                            VerticalLayout {
-                                spacing: 4px;
-                                horizontal-stretch: 1;
-                                Text { text: "YÜKSEKLİK"; color: #7d8598; font-size: 10px; }
-                                LineEdit {
-                                    text <=> root.rh-text;
-                                    accepted(t) => { root.region-h = Math.round(t.to-float()); }
-                                    enabled: !root.running;
-                                }
-                            }
-                        }
-
-                        // Bolge sec butonu — crosshair icon + text
-                        Rectangle {
-                            height: 40px;
-                            border-radius: 10px;
-                            border-width: 1px;
-                            border-color: pick-touch.has-hover ? #4de3ce : #333b4d;
-                            background: pick-touch.has-hover ? rgba(77,227,206, 0.08) : #191d28;
-                            drop-shadow-color: transparent;
-                            drop-shadow-blur: 0;
-                            animate background { duration: 180ms; }
-                            animate border-color { duration: 180ms; }
-                            opacity: !root.running ? 1.0 : 0.4;
-
-                            HorizontalLayout {
-                                alignment: center;
-                                spacing: 10px;
-                                Rectangle {
-                                    width: 16px;
-                                    height: 16px;
-                                    y: (parent.height - 16px) / 2;
-                                    IconCrosshair { width: 100%; height: 100%; tint: #4de3ce; }
-                                }
-                                Text {
-                                    text: "Ekranda drag ile bölge seç";
-                                    color: #4de3ce;
-                                    font-size: 13px;
-                                    font-weight: 500;
-                                    vertical-alignment: center;
-                                }
-                            }
-                            pick-touch := TouchArea {
-                                mouse-cursor: pointer;
-                                enabled: !root.running;
-                                clicked => { root.pick-region(); }
-                            }
-                        }
-                    }
-
-                    // Card: Zamanlama
-                    zaman-card := Card {
-                        title: "ZAMANLAMA";
-
-                        HorizontalLayout {
-                            spacing: 12px;
-                            Text {
-                                text: "Aralık";
-                                color: #7d8598;
-                                font-size: 12px;
-                                min-width: 90px;
-                                vertical-alignment: center;
-                            }
-                            Slider {
-                                value <=> root.interval-ms;
-                                minimum: 100;
-                                maximum: 2000;
-                                horizontal-stretch: 1;
-                                enabled: !root.running;
-                            }
-                            Text {
-                                text: "\{Math.round(root.interval-ms)}ms";
-                                color: #eaf0ff;
-                                font-family: "Consolas";
-                                font-size: 12px;
-                                min-width: 70px;
-                                horizontal-alignment: right;
-                                vertical-alignment: center;
-                            }
-                        }
-                        HorizontalLayout {
-                            spacing: 12px;
-                            Text {
-                                text: "Cooldown";
-                                color: #7d8598;
-                                font-size: 12px;
-                                min-width: 90px;
-                                vertical-alignment: center;
-                            }
-                            Slider {
-                                value <=> root.cooldown-ms;
-                                minimum: 200;
-                                maximum: 5000;
-                                horizontal-stretch: 1;
-                                enabled: !root.running;
-                            }
-                            Text {
-                                text: "\{Math.round(root.cooldown-ms)}ms";
-                                color: #eaf0ff;
-                                font-family: "Consolas";
-                                font-size: 12px;
-                                min-width: 70px;
-                                horizontal-alignment: right;
-                                vertical-alignment: center;
-                            }
-                        }
-
-                        // Sag altta kucuk ayar butonlari
-                        HorizontalLayout {
-                            spacing: 8px;
-                            alignment: end;
-                            Rectangle {
-                                width: 80px;
-                                height: 30px;
-                                border-radius: 8px;
-                                background: save-touch.has-hover ? #232838 : #191d28;
-                                border-width: 1px;
-                                border-color: #333b4d;
-                                animate background { duration: 160ms; }
-                                Text {
-                                    text: "Kaydet";
-                                    color: #eaf0ff;
-                                    font-size: 12px;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                                save-touch := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => { root.save-config(); }
-                                }
-                            }
-                            Rectangle {
-                                width: 80px;
-                                height: 30px;
-                                border-radius: 8px;
-                                background: clog-touch.has-hover ? #232838 : #191d28;
-                                border-width: 1px;
-                                border-color: #333b4d;
-                                animate background { duration: 160ms; }
-                                Text {
-                                    text: "Log Sil";
-                                    color: #eaf0ff;
-                                    font-size: 12px;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                                clog-touch := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => { root.clear-log(); }
-                                }
-                            }
-                        }
-                    }
-
-                    // Card: Log — kalan alani doldur
-                    log-card := Card {
-                        title: "CANLI LOG";
-                        badge: "son 100 satır";
-                        vertical-stretch: 1;
-
-                        Rectangle {
-                            vertical-stretch: 1;
-                            background: #06090f;
-                            border-radius: 10px;
-                            border-width: 1px;
-                            border-color: #262c3a;
-
-                            ScrollView {
-                                Text {
-                                    text: root.log-text != "" ? root.log-text : "worker durduruldu — BAŞLAT'a bas veya F8'e bas";
-                                    color: root.log-text != "" ? #cbd0da : #4d5468;
-                                    font-family: "Consolas";
-                                    font-size: 11px;
-                                    wrap: word-wrap;
-                                    x: 12px;
-                                    y: 10px;
-                                    width: parent.width - 24px;
-                                }
-                            }
+                    ScrollView {
+                        Text {
+                            text: root.log-text != "" ? root.log-text : "worker durduruldu — BAŞLAT'a bas veya F8'e bas";
+                            color: root.log-text != "" ? #cbd0da : #4d5468;
+                            font-family: "Consolas";
+                            font-size: 11px;
+                            wrap: word-wrap;
+                            x: 12px;
+                            y: 10px;
+                            width: parent.width - 24px;
                         }
                     }
                 }
+            }
         }
     }
 
-    // ==== FAB (overlay) — Window ustunde, sag alt ====
+    // ==== FAB (overlay) ====
     Fab {
         x: root.width - 88px;
         y: root.height - 88px;
@@ -843,7 +914,6 @@ export component MainWindow inherits Window {
         clicked => { root.toggle-running(); }
     }
 
-    // F8 hint
     Text {
         x: root.width - 60px;
         y: root.height - 24px;
@@ -853,4 +923,5 @@ export component MainWindow inherits Window {
         font-size: 10px;
     }
 
-    } // wrapper Rectangle kapanış
+    } // wrapper Rectangle
+}

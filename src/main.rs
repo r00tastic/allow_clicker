@@ -1,4 +1,4 @@
-//! allow_clicker — GUI ekran OCR ile coklu hedef kelime tespit + otomatik tiklama
+//! allow_clicker — GUI ekran OCR ile sirali adim zinciri + otomatik tiklama
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -19,8 +19,8 @@ use anyhow::Result;
 use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
 use crate::{
-    clicker::{Clicker, ClickerConfig, ClickerMsg},
-    config::Config,
+    clicker::{Clicker, ClickerConfig, ClickerMsg, StepConfig},
+    config::{Config, StepAction},
 };
 
 slint::include_modules!();
@@ -39,14 +39,17 @@ fn main() -> Result<()> {
     ui.set_region_w(cfg.region_w);
     ui.set_region_h(cfg.region_h);
     ui.set_interval_ms(cfg.interval_ms as f32);
-    ui.set_cooldown_ms(cfg.cooldown_ms as f32);
     ui.set_status_text(SharedString::from("Bekleme"));
 
-    // --- Hedef kelimeler modeli ---
-    let targets_model: Rc<VecModel<SharedString>> = Rc::new(VecModel::from(
-        cfg.targets.iter().map(|s| SharedString::from(s.as_str())).collect::<Vec<_>>(),
+    // --- Steps modeli ---
+    let steps_model: Rc<VecModel<StepItem>> = Rc::new(VecModel::from(
+        cfg.steps.iter().map(|s| StepItem {
+            word: SharedString::from(s.word.as_str()),
+            delay_secs: s.delay_secs,
+            stop: s.action == StepAction::Stop,
+        }).collect::<Vec<_>>(),
     ));
-    ui.set_targets(ModelRc::from(targets_model.clone()));
+    ui.set_steps(ModelRc::from(steps_model.clone()));
 
     // --- Clicker ---
     let clicker = Rc::new(RefCell::new(Clicker::new()));
@@ -54,32 +57,29 @@ fn main() -> Result<()> {
 
     let log_lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
-    // --- add-target ---
+    // --- add-step ---
     {
-        let model = targets_model.clone();
-        ui.on_add_target(move |w| {
-            let s = w.trim().to_string();
-            if s.is_empty() { return; }
-            // Dupe kontrolu (case-insensitive)
-            let lower = s.to_lowercase();
-            for i in 0..model.row_count() {
-                if model.row_data(i).map(|r| r.to_lowercase() == lower).unwrap_or(false) {
-                    return; // zaten var
-                }
-            }
-            model.push(SharedString::from(s.as_str()));
+        let model = steps_model.clone();
+        ui.on_add_step(move |word, delay, stop| {
+            let w = word.trim().to_string();
+            if w.is_empty() { return; }
+            let d = if delay <= 0.0 { 1.5 } else { delay };
+            model.push(StepItem {
+                word: SharedString::from(w.as_str()),
+                delay_secs: d,
+                stop,
+            });
         });
     }
 
-    // --- remove-target ---
+    // --- remove-step ---
     {
-        let model = targets_model.clone();
-        ui.on_remove_target(move |idx| {
+        let model = steps_model.clone();
+        ui.on_remove_step(move |idx| {
             let i = idx as usize;
             if i < model.row_count() && model.row_count() > 1 {
                 model.remove(i);
             }
-            // En az 1 kelime kalsin — hepsi silinmesin
         });
     }
 
@@ -112,31 +112,35 @@ fn main() -> Result<()> {
         let ui_handle = ui.as_weak();
         let clicker = clicker.clone();
         let msg_tx = msg_tx.clone();
-        let model = targets_model.clone();
+        let model = steps_model.clone();
         move || {
             let ui = match ui_handle.upgrade() { Some(u) => u, None => return };
             let mut c = clicker.borrow_mut();
             if c.is_running() {
                 c.stop();
                 ui.set_running(false);
+                ui.set_current_step(-1);
                 ui.set_status_text(SharedString::from("Durduruluyor..."));
             } else {
-                // Model'den kelimeleri topla
-                let mut targets: Vec<String> = Vec::with_capacity(model.row_count());
+                let mut steps: Vec<StepConfig> = Vec::with_capacity(model.row_count());
                 for i in 0..model.row_count() {
-                    if let Some(w) = model.row_data(i) {
-                        let s = w.to_string();
-                        if !s.trim().is_empty() {
-                            targets.push(s);
+                    if let Some(item) = model.row_data(i) {
+                        let w = item.word.to_string();
+                        if !w.trim().is_empty() {
+                            steps.push(StepConfig {
+                                word: w,
+                                delay_secs: if item.delay_secs <= 0.0 { 1.5 } else { item.delay_secs },
+                                action: if item.stop { StepAction::Stop } else { StepAction::Wait },
+                            });
                         }
                     }
                 }
-                if targets.is_empty() {
-                    ui.set_status_text(SharedString::from("Hedef listesi bos!"));
+                if steps.is_empty() {
+                    ui.set_status_text(SharedString::from("Adim listesi bos!"));
                     return;
                 }
                 let cfg = ClickerConfig {
-                    targets,
+                    steps,
                     case_sensitive: ui.get_case_sensitive(),
                     dry_run: ui.get_dry_run(),
                     region_x: ui.get_region_x(),
@@ -144,13 +148,13 @@ fn main() -> Result<()> {
                     region_w: ui.get_region_w().max(0) as u32,
                     region_h: ui.get_region_h().max(0) as u32,
                     interval_ms: ui.get_interval_ms() as u64,
-                    cooldown_ms: ui.get_cooldown_ms() as u64,
                 };
                 if let Err(e) = c.start(cfg, msg_tx.clone()) {
                     ui.set_status_text(SharedString::from(format!("HATA: {}", e)));
                     return;
                 }
                 ui.set_running(true);
+                ui.set_current_step(0);
                 ui.set_status_text(SharedString::from("Tarama"));
             }
         }
@@ -164,17 +168,21 @@ fn main() -> Result<()> {
     // --- Save config ---
     {
         let ui_handle = ui.as_weak();
-        let model = targets_model.clone();
+        let model = steps_model.clone();
         ui.on_save_config(move || {
             let ui = match ui_handle.upgrade() { Some(u) => u, None => return };
-            let mut targets: Vec<String> = Vec::with_capacity(model.row_count());
+            let mut steps = Vec::with_capacity(model.row_count());
             for i in 0..model.row_count() {
-                if let Some(w) = model.row_data(i) {
-                    targets.push(w.to_string());
+                if let Some(item) = model.row_data(i) {
+                    steps.push(config::Step {
+                        word: item.word.to_string(),
+                        delay_secs: item.delay_secs,
+                        action: if item.stop { StepAction::Stop } else { StepAction::Wait },
+                    });
                 }
             }
             let cfg = Config {
-                targets,
+                steps,
                 case_sensitive: ui.get_case_sensitive(),
                 dry_run: ui.get_dry_run(),
                 region_x: ui.get_region_x(),
@@ -182,7 +190,6 @@ fn main() -> Result<()> {
                 region_w: ui.get_region_w(),
                 region_h: ui.get_region_h(),
                 interval_ms: ui.get_interval_ms() as u32,
-                cooldown_ms: ui.get_cooldown_ms() as u32,
             };
             match cfg.save() {
                 Ok(_) => ui.set_status_text(SharedString::from("Ayarlar kaydedildi")),
@@ -217,12 +224,13 @@ fn main() -> Result<()> {
     let prev_uptime_tick = prev_uptime.clone();
     let timer = Timer::default();
     timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
-        while hotkey_rx.try_recv().is_ok() {
+        if hotkey_rx.try_recv().is_ok() {
             toggle_tick();
         }
         let mut log_dirty = false;
         let mut new_click = 0i32;
         let mut stopped = false;
+        let mut step_changed: Option<usize> = None;
         while let Ok(m) = msg_rx.try_recv() {
             match m {
                 ClickerMsg::Log(line) => {
@@ -236,6 +244,7 @@ fn main() -> Result<()> {
                 }
                 ClickerMsg::Clicked => new_click += 1,
                 ClickerMsg::Stopped => stopped = true,
+                ClickerMsg::StepChanged(idx) => step_changed = Some(idx),
             }
         }
         if let Some(ui) = ui_handle_tick.upgrade() {
@@ -247,8 +256,12 @@ fn main() -> Result<()> {
                 let curr = ui.get_click_count();
                 ui.set_click_count(curr + new_click);
             }
+            if let Some(idx) = step_changed {
+                ui.set_current_step(idx as i32);
+            }
             if stopped {
                 ui.set_running(false);
+                ui.set_current_step(-1);
                 ui.set_status_text(SharedString::from("Durduruldu"));
                 start_time_tick.set(None);
             }
