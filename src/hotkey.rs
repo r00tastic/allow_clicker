@@ -5,7 +5,7 @@ use std::sync::mpsc;
 use anyhow::Result;
 use global_hotkey::{
     hotkey::{Code, HotKey, Modifiers},
-    GlobalHotKeyEvent, GlobalHotKeyManager,
+    GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState,
 };
 
 pub struct HotkeyGuard {
@@ -21,8 +21,10 @@ pub fn install_f8(tx: mpsc::Sender<()>) -> Result<HotkeyGuard> {
     // Alici thread: event geldiginde tx'e sinyal
     std::thread::spawn(move || {
         let receiver = GlobalHotKeyEvent::receiver();
-        while let Ok(_ev) = receiver.recv() {
-            let _ = tx.send(());
+        while let Ok(ev) = receiver.recv() {
+            if ev.state == HotKeyState::Pressed {
+                let _ = tx.send(());
+            }
         }
     });
 
